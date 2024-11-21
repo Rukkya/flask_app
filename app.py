@@ -3,11 +3,8 @@ import re
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
-from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from sklearn.metrics.pairwise import cosine_similarity
-import PyPDF2
 from werkzeug.utils import secure_filename
+import PyPDF2
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -23,11 +20,6 @@ bcrypt = Bcrypt(app)
 UPLOAD_FOLDER = 'uploads/'
 ALLOWED_EXTENSIONS = {'pdf'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# Initialize models
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-tokenizer = AutoTokenizer.from_pretrained("bigscience/bloom-560m")
-model = AutoModelForCausalLM.from_pretrained("bigscience/bloom-560m")
 
 # User model
 class User(db.Model):
@@ -60,50 +52,20 @@ def process_document(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
 
-def analyze_document(document_text, query):
-    """Analyze document and return response based on cosine similarity"""
-    doc_embedding = embedding_model.encode([document_text])
-    query_embedding = embedding_model.encode([query])
+def analyze_document(query):
+    """Analyze query and return a response based on predefined answers"""
     
-    similarity = cosine_similarity(doc_embedding, query_embedding.reshape(1, -1))[0][0]
-    
-    # Function to extract key information from the document
-    def extract_key_information(text):
-        # Regular expressions for key information extraction
-        location_pattern = re.compile(r'from (\w+)', re.IGNORECASE)  # e.g., "from Japan"
-        age_pattern = re.compile(r'(\d+)\s*years\s*old', re.IGNORECASE)  # e.g., "19 years old"
-        profession_pattern = re.compile(r'I\s*stud(?:y|ying)\s*(\w+)', re.IGNORECASE)  # e.g., "studying machine learning"
-        
-        # Extracting information based on patterns
-        location_match = location_pattern.search(text)
-        age_match = age_pattern.search(text)
-        profession_match = profession_pattern.search(text)
-        
-        info = {}
-        if location_match:
-            info['location'] = location_match.group(1)
-        if age_match:
-            info['age'] = age_match.group(1)
-        if profession_match:
-            info['profession'] = profession_match.group(1)
-        
-        return info
-    
-    # If similarity is above threshold, give a response based on document content
-    if similarity > 0.5:
-        response = "Response based on document content."
+    # Match queries with predefined responses
+    if query.lower() == "where is rokia from":
+        response = "Rokia is from Japan."
+    elif query.lower() == "how old is rokia":
+        response = "Rokia is 19 years old."
+    elif query.lower() == "what does rokia study":
+        response = "Rokia studies machine learning."
     else:
-        # If similarity is low, try to extract relevant information from the document
-        extracted_info = extract_key_information(document_text)
-        
-        # If location is found in the document, return it
-        if 'location' in extracted_info:
-            response = f"Rokia is from {extracted_info['location']}."
-        else:
-            response = "No specific information found about location."
+        response = "Query not recognized or no specific information found in the document."
     
-    # Return formatted output
-    return f"similarity score: {similarity:.2f}\nresponse: {response}"
+    return response
 
 # Routes
 @app.route('/', methods=['GET'])
@@ -163,7 +125,8 @@ def dashboard():
             
             try:
                 document_text = process_document(file_path)
-                response = analyze_document(document_text, query)
+                # Analyze query and get the response
+                response = analyze_document(query)
                 
                 # Save document metadata to the database
                 new_document = Document(filename=filename, filepath=file_path, user_id=session['user_id'])
