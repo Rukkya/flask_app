@@ -1,120 +1,146 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from sklearn.metrics.pairwise import cosine_similarity
-import PyPDF2
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from transformers import BloomTokenizerFast, BloomForCausalLM
+import torch
+from sentence_transformers import SentenceTransformer, util
+import PyPDF2
+import glob
 
-app = Flask(_name_)
-app.secret_key = os.urandom(24)
-
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rokia:123@localhost/flask_app'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app = Flask(__name__)
+app.secret_key = 'your_secret_key'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:123@rokia:5432/postgres'
 db = SQLAlchemy(app)
-bcrypt = Bcrypt(app)
 
-# Initialize models
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-tokenizer = AutoTokenizer.from_pretrained("bigscience/bloom-560m")
-model = AutoModelForCausalLM.from_pretrained("bigscience/bloom-560m")
+# Load models
+tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-560m")
+model = BloomForCausalLM.from_pretrained("bigscience/bloom-560m")
+sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# User model
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
 
-def process_document(file):
-    if file.filename.endswith('.pdf'):
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
-    else:
-        return file.read().decode('utf-8')
+with app.app_context():
+    db.create_all()
 
-def analyze_document(document_text, query):
-    doc_embedding = embedding_model.encode([document_text])
-    query_embedding = embedding_model.encode([query])
-    
-    similarity = cosine_similarity(doc_embedding, query_embedding.reshape(1, -1))[0][0]
-    
-    if similarity > 0.5:
-        return f"Similarity score: {similarity:.2f}\nResponse based on document content."
-    else:
-        inputs = tokenizer(f"Document: {document_text[:500]}...\nQuery: {query}", 
-                         return_tensors="pt", max_length=512, truncation=True)
-        outputs = model.generate(**inputs, max_length=200, num_return_sequences=1)
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return f"Similarity score: {similarity:.2f}\nGenerated response: {response}"
+def get_file_content(file_path):
+    if file_path.lower().endswith('.pdf'):
+        with open(file_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text()
+            return text
+    elif file_path.lower().endswith('.txt'):
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return file.read()
+    return None
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    if 'user_id' in session:
+    if 'username' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user = User.query.filter_by(username=request.form['username']).first()
-        if user and bcrypt.check_password_hash(user.password, request.form['password']):
-            session['user_id'] = user.id
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        
+        if user and check_password_hash(user.password, password):
+            session['username'] = username
             return redirect(url_for('dashboard'))
-        flash('Invalid credentials')
+        return render_template('login.html', error='Invalid credentials')
     return render_template('login.html')
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     if request.method == 'POST':
-        hashed_password = bcrypt.generate_password_hash(request.form['password']).decode('utf-8')
-        user = User(username=request.form['username'], password=hashed_password)
-        db.session.add(user)
-        try:
-            db.session.commit()
-            flash('Account created successfully')
-            return redirect(url_for('login'))
-        except:
-            db.session.rollback()
-            flash('Username already exists')
+        username = request.form['username']
+        password = request.form['password']
+        
+        if User.query.filter_by(username=username).first():
+            return render_template('signup.html', error='Username already exists')
+        
+        hashed_password = generate_password_hash(password)
+        new_user = User(username=username, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        return redirect(url_for('login'))
     return render_template('signup.html')
 
-@app.route('/dashboard', methods=['GET', 'POST'])
+@app.route('/dashboard')
 def dashboard():
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
+    return render_template('dashboard.html')
+
+@app.route('/browse_files')
+def browse_files():
+    current_path = request.args.get('path', '/')
     
-    response = None
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('No file uploaded')
-            return redirect(request.url)
+    try:
+        # Get directories
+        directories = [d for d in os.listdir(current_path) if os.path.isdir(os.path.join(current_path, d))]
         
-        file = request.files['file']
-        query = request.form['query']
+        # Get PDF and TXT files using glob
+        pdf_files = glob.glob(os.path.join(current_path, '*.pdf'))
+        txt_files = glob.glob(os.path.join(current_path, '*.txt'))
         
-        if file.filename == '':
-            flash('No file selected')
-            return redirect(request.url)
+        # Combine and get just the filenames
+        files = [os.path.basename(f) for f in pdf_files + txt_files]
         
-        try:
-            document_text = process_document(file)
-            response = analyze_document(document_text, query)
-        except Exception as e:
-            flash(f'Error processing file: {str(e)}')
+        return jsonify({
+            'current_path': current_path,
+            'directories': sorted(directories),
+            'files': sorted(files)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/process_query', methods=['POST'])
+def process_query():
+    file_path = request.form.get('file_path')
+    query = request.form.get('query')
     
-    return render_template('dashboard.html', response=response)
+    if not file_path or not query:
+        return jsonify({'error': 'Missing file path or query'}), 400
+    
+    try:
+        # Read file content
+        content = get_file_content(file_path)
+        if not content:
+            return jsonify({'error': 'Unable to read file content'}), 400
+        
+        # Generate embeddings
+        content_embedding = sentence_model.encode(content)
+        query_embedding = sentence_model.encode(query)
+        
+        # Calculate similarity
+        similarity = util.pytorch_cos_sim(content_embedding, query_embedding).item()
+        
+        if similarity < 0.5:
+            # Generate response using BLOOM
+            inputs = tokenizer(query, return_tensors="pt")
+            outputs = model.generate(**inputs, max_length=100, num_return_sequences=1)
+            response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        else:
+            # Use content from document
+            response = f"Found relevant content (similarity: {similarity:.2f}): {content[:500]}..."
+        
+        return jsonify({'response': response, 'similarity': similarity})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/logout')
 def logout():
-    session.pop('user_id', None)
+    session.pop('username', None)
     return redirect(url_for('login'))
 
-if _name_ == '_main_':
-    with app.app_context():
-        db.create_all()
+if __name__ == '__main__':
     app.run(debug=True)
