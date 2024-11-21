@@ -38,12 +38,6 @@ class Document(db.Model):
     content = db.Column(db.Text, nullable=False)
     filename = db.Column(db.String(200), nullable=False)
 
-# Create tables (run this once) - Use 'app.before_first_request' correctly.
-@app.before_first_request
-def create_tables():
-    with app.app_context():  # Ensures the database operations are run in the correct context
-        db.create_all()
-
 # Function to process the document (PDF or text)
 def process_document(uploaded_file):
     document_text = ""
@@ -157,5 +151,12 @@ def logout():
     flash("You have been logged out.", "info")
     return redirect(url_for('login'))
 
+# Create tables manually when the app starts
+def create_tables():
+    with app.app_context():
+        db.create_all()
+
+# Call create_tables() after the app starts
 if __name__ == '__main__':
+    create_tables()  # Make sure tables are created before running the app
     app.run(debug=True)
