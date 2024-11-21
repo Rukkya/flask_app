@@ -4,114 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .file-browser {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .file-item {
-            padding: 8px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-        }
-        .file-item:hover {
-            background-color: #f0f0f0;
-        }
-        .directory {
-            color: #2c3e50;
-            font-weight: bold;
-        }
-        .file {
-            color: #34495e;
-        }
-        .selected-file {
-            background-color: #e8f0fe;
-        }
-        .query-section {
-            margin-top: 20px;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            margin: 10px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .selected-file-display {
-            margin: 15px 0;
-            padding: 10px;
-            background-color: #e8f0fe;
-            border-radius: 4px;
-            border: 1px solid #4CAF50;
-            display: none;
-        }
-        #response {
-            margin-top: 20px;
-            padding: 15px;
-            border-left: 4px solid #4CAF50;
-            background-color: #f9f9f9;
-        }
-        .logout-btn {
-            float: right;
-            background-color: #dc3545;
-        }
-        .logout-btn:hover {
-            background-color: #c82333;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <a href="/logout" class="logout-btn">Logout</a>
-        <h1>Document Query Dashboard</h1>
+    <div class="dashboard-container">
+        <nav class="navbar">
+            <h1>Document Analysis Dashboard</h1>
+            <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+        </nav>
         
-        <div class="file-browser">
-            <h2>File Browser</h2>
-            <div id="fileList"></div>
-        </div>
+        <div class="main-content">
+            <div class="upload-section">
+                <h2>Upload Document & Query</h2>
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <form method="POST" enctype="multipart/form-data" class="upload-form">
+                    <div class="form-group">
+                        <label for="file">Upload PDF or TXT file:</label>
+                        <input type="file" id="file" name="file" accept=".pdf,.txt" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="query">Enter your query:</label>
+                        <textarea id="query" name="query" required></textarea>
+                    </div>
+                    <button type="submit" class="btn">Analyze</button>
+                </form>
+            </div>
 
-        <div class="selected-file-display" id="selectedFileDisplay">
-            <strong>Selected File:</strong> <span id="selectedFileName"></span>
+            {% if response %}
+            <div class="response-section">
+                <h3>Analysis Results</h3>
+                <pre class="response-text">{{ response }}</pre>
+            </div>
+            {% endif %}
         </div>
-
-        <input type="hidden" id="selectedFile">
-        
-        <div class="query-section">
-            <h2>Query</h2>
-            <input type="text" id="queryInput" placeholder="Enter your query here">
-            <button onclick="processQuery()">Process Query</button>
-        </div>
-
-        <div id="response"></div>
     </div>
-
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
