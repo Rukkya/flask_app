@@ -1,33 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h1>Welcome, {{ session['username'] }}!</h1>
-
-        <!-- File Upload Form -->
-        <form method="POST" enctype="multipart/form-data">
-            <div class="file-upload-container">
-                <label for="file">Choose a document (PDF or Text):</label>
-                <input type="file" name="file" accept=".txt, .pdf" required>
-            </div>
-
-            <label for="query">Enter your query:</label>
-            <input type="text" name="query" required>
-            <input type="submit" value="Submit">
-        </form>
-
-        {% if response %}
-            <h2>Response:</h2>
-            <p>{{ response }}</p>
-        {% endif %}
-
-        <a href="{{ url_for('logout') }}">Logout</a>
+<form method="POST" enctype="multipart/form-data">
+    <div class="file-upload-container">
+        <label for="file">Choose a document (PDF):</label>
+        <input type="file" name="file" accept=".pdf" required>
     </div>
-</body>
-</html>
+    <label for="query">Enter your query:</label>
+    <input type="text" name="query" required>
+    <input type="submit" value="Submit">
+</form>
