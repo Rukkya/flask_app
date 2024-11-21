@@ -23,4 +23,11 @@
         </form>
 
         {% if response %}
-            <h2>
+            <h2>Response:</h2>
+            <p>{{ response }}</p>
+        {% endif %}
+
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+</body>
+</html>
