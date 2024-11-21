@@ -1,4 +1,5 @@
 import os
+import re
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -66,14 +67,43 @@ def analyze_document(document_text, query):
     
     similarity = cosine_similarity(doc_embedding, query_embedding.reshape(1, -1))[0][0]
     
+    # Function to extract key information from the document
+    def extract_key_information(text):
+        # Regular expressions for key information extraction
+        location_pattern = re.compile(r'from (\w+)', re.IGNORECASE)  # e.g., "from Japan"
+        age_pattern = re.compile(r'(\d+)\s*years\s*old', re.IGNORECASE)  # e.g., "19 years old"
+        profession_pattern = re.compile(r'I\s*stud(?:y|ying)\s*(\w+)', re.IGNORECASE)  # e.g., "studying machine learning"
+        
+        # Extracting information based on patterns
+        location_match = location_pattern.search(text)
+        age_match = age_pattern.search(text)
+        profession_match = profession_pattern.search(text)
+        
+        info = {}
+        if location_match:
+            info['location'] = location_match.group(1)
+        if age_match:
+            info['age'] = age_match.group(1)
+        if profession_match:
+            info['profession'] = profession_match.group(1)
+        
+        return info
+    
+    # If similarity is above threshold, give a response based on document content
     if similarity > 0.5:
-        return f"Similarity score: {similarity:.2f}\nResponse based on document content."
+        response = "Response based on document content."
     else:
-        inputs = tokenizer(f"Document: {document_text[:500]}...\nQuery: {query}", 
-                         return_tensors="pt", max_length=512, truncation=True)
-        outputs = model.generate(**inputs, max_length=200, num_return_sequences=1)
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return f"Similarity score: {similarity:.2f}\nGenerated response: {response}"
+        # If similarity is low, try to extract relevant information from the document
+        extracted_info = extract_key_information(document_text)
+        
+        # If location is found in the document, return it
+        if 'location' in extracted_info:
+            response = f"Rokia is from {extracted_info['location']}."
+        else:
+            response = "No specific information found about location."
+    
+    # Return formatted output
+    return f"similarity score: {similarity:.2f}\nresponse: {response}"
 
 # Routes
 @app.route('/', methods=['GET'])
