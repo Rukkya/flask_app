@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="auth-container">
+            <!-- Login Form -->
+            <div id="login-form" class="form-container">
+                <h2>Login</h2>
+                <div class="alert" id="login-alert" style="display: none;"></div>
+                <form onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="login-username">Username:</label>
+                        <input type="text" id="login-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password:</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn">Login</button>
+                </form>
+                <p class="text-center">
+                    Don't have an account? <a href="#" onclick="toggleForms()">Sign up</a>
+                </p>
+            </div>
+
+            <!-- Signup Form -->
+            <div id="signup-form" class="form-container" style="display: none;">
+                <h2>Sign Up</h2>
+                <div class="alert" id="signup-alert" style="display: none;"></div>
+                <form onsubmit="handleSignup(event)">
+                    <div class="form-group">
+                        <label for="signup-username">Username:</label>
+                        <input type="text" id="signup-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-password">Password:</label>
+                        <input type="password" id="signup-password" required>
+                    </div>
+                    <button type="submit" class="btn">Sign Up</button>
+                </form>
+                <p class="text-center">
+                    Already have an account? <a href="#" onclick="toggleForms()">Login</a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard" class="dashboard-container" style="display: none;">
+            <nav class="navbar">
+                <h1>Document Analysis Dashboard</h1>
+                <button onclick="logout()" class="btn-logout">Logout</button>
+            </nav>
+            
+            <div class="main-content">
+                <div class="upload-section">
+                    <h2>Upload Document & Query</h2>
+                    <div class="alert" id="dashboard-alert" style="display: none;"></div>
+                    
+                    <form onsubmit="handleAnalysis(event)" class="upload-form">
+                        <div class="form-group">
+                            <label for="file">Upload PDF or TXT file:</label>
+                            <input type="file" id="file" accept=".pdf,.txt" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="query">Enter your query:</label>
+                            <textarea id="query" required></textarea>
+                        </div>
+                        <button type="submit" class="btn">Analyze</button>
+                    </form>
+                </div>
+
+                <div id="response-section" class="response-section" style="display: none;">
+                    <h3>Analysis Results</h3>
+                    <pre id="response-text" class="response-text"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/main.js"></script>
+</body>
+</html>

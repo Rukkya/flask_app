@@ -1,162 +1,120 @@
-import PyPDF2
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sklearn.metrics.pairwise import cosine_similarity
+import PyPDF2
+import os
 
-# Initialize Flask app
-app = Flask(__name__)
+app = Flask(_name_)
+app.secret_key = os.urandom(24)
 
-# Secret key for session management (replace this with your actual secret key)
-app.secret_key = 'd3b07384d113edec49eaa6238ad5f28d'  # Replace with a secure random key
-
-# Configure SQLAlchemy to use PostgreSQL
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rokia:123@localhost/flask_app'  # Update this
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rokia:123@localhost/flask_app'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-# Initialize Bcrypt for password hashing
 bcrypt = Bcrypt(app)
 
-# Initialize Sentence Transformers and Hugging Face model
+# Initialize models
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 tokenizer = AutoTokenizer.from_pretrained("bigscience/bloom-560m")
 model = AutoModelForCausalLM.from_pretrained("bigscience/bloom-560m")
 
-# Create User model
+# User model
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(120), unique=True, nullable=False)
+    username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
 
-# Create Document model
-class Document(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    filename = db.Column(db.String(200), nullable=False)
-
-# Function to process the document (PDF or text)
-def process_document(uploaded_file):
-    document_text = ""
-    
-    if uploaded_file.type == "application/pdf":
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
+def process_document(file):
+    if file.filename.endswith('.pdf'):
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
         for page in pdf_reader.pages:
-            document_text += page.extract_text() or ""
+            text += page.extract_text()
+        return text
     else:
-        document_text = uploaded_file.read().decode("utf-8")
+        return file.read().decode('utf-8')
+
+def analyze_document(document_text, query):
+    doc_embedding = embedding_model.encode([document_text])
+    query_embedding = embedding_model.encode([query])
     
-    return document_text
-
-# Function to calculate embeddings and generate response
-def analyze_document_with_query(document_text, user_query):
-    # Generate embeddings for document text
-    document_embeddings = embedding_model.encode([document_text])
-    user_query_embedding = embedding_model.encode([user_query])
-
-    similarity_score = cosine_similarity(document_embeddings, user_query_embedding)
-
-    if similarity_score[0][0] > 0.5:
-        # Use embeddings-based response generation
-        return f"Document relevance score: {similarity_score[0][0]}. Answer based on document embeddings."
+    similarity = cosine_similarity(doc_embedding, query_embedding.reshape(1, -1))[0][0]
+    
+    if similarity > 0.5:
+        return f"Similarity score: {similarity:.2f}\nResponse based on document content."
     else:
-        # Use Bloom model for response generation
-        combined_input = f"Document: {document_text}\n\nQuery: {user_query}"
-        input_ids = tokenizer.encode(combined_input, return_tensors="pt")
-        output = model.generate(input_ids, max_length=300, num_beams=4, early_stopping=True)
-        generated_response = tokenizer.decode(output[0], skip_special_tokens=True)
-        return generated_response
+        inputs = tokenizer(f"Document: {document_text[:500]}...\nQuery: {query}", 
+                         return_tensors="pt", max_length=512, truncation=True)
+        outputs = model.generate(**inputs, max_length=200, num_return_sequences=1)
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return f"Similarity score: {similarity:.2f}\nGenerated response: {response}"
 
-# Sign-up route
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+@app.route('/', methods=['GET'])
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
-        # Check if the user already exists
-        user = User.query.filter_by(username=username).first()
-        if user:
-            flash("Username already exists!", "danger")
-            return redirect(url_for('signup'))
-
-        # Hash the password
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-
-        # Create a new user and add to the database
-        new_user = User(username=username, password=hashed_password)
-        db.session.add(new_user)
-        db.session.commit()
-
-        flash("Sign-up successful! You can now log in.", "success")
-        return redirect(url_for('login'))
-
-    return render_template('signup.html')
-
-# Login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        # Check if user exists
-        user = User.query.filter_by(username=username).first()
-        if user and bcrypt.check_password_hash(user.password, password):
-            # Successful login
+        user = User.query.filter_by(username=request.form['username']).first()
+        if user and bcrypt.check_password_hash(user.password, request.form['password']):
             session['user_id'] = user.id
-            session['username'] = user.username
-            flash("Login successful!", "success")
             return redirect(url_for('dashboard'))
-        else:
-            flash("Invalid credentials. Please try again.", "danger")
-            return redirect(url_for('login'))
-
+        flash('Invalid credentials')
     return render_template('login.html')
 
-# Dashboard route
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        hashed_password = bcrypt.generate_password_hash(request.form['password']).decode('utf-8')
+        user = User(username=request.form['username'], password=hashed_password)
+        db.session.add(user)
+        try:
+            db.session.commit()
+            flash('Account created successfully')
+            return redirect(url_for('login'))
+        except:
+            db.session.rollback()
+            flash('Username already exists')
+    return render_template('signup.html')
+
 @app.route('/dashboard', methods=['GET', 'POST'])
 def dashboard():
     if 'user_id' not in session:
-        flash("Please log in to access the dashboard.", "warning")
         return redirect(url_for('login'))
-
+    
+    response = None
     if request.method == 'POST':
-        uploaded_file = request.files['file']
-        user_query = request.form['query']
+        if 'file' not in request.files:
+            flash('No file uploaded')
+            return redirect(request.url)
+        
+        file = request.files['file']
+        query = request.form['query']
+        
+        if file.filename == '':
+            flash('No file selected')
+            return redirect(request.url)
+        
+        try:
+            document_text = process_document(file)
+            response = analyze_document(document_text, query)
+        except Exception as e:
+            flash(f'Error processing file: {str(e)}')
+    
+    return render_template('dashboard.html', response=response)
 
-        if uploaded_file:
-            # Process the uploaded document (PDF or Text)
-            document_text = process_document(uploaded_file)
-
-            # Save document to the database
-            new_document = Document(user_id=session['user_id'], content=document_text, filename=uploaded_file.filename)
-            db.session.add(new_document)
-            db.session.commit()
-
-            # Analyze the document with the query
-            response = analyze_document_with_query(document_text, user_query)
-            return render_template('dashboard.html', response=response)
-
-    return render_template('dashboard.html')
-
-# Logout route
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
-    session.pop('username', None)
-    flash("You have been logged out.", "info")
     return redirect(url_for('login'))
 
-# Create tables manually when the app starts
-def create_tables():
+if _name_ == '_main_':
     with app.app_context():
         db.create_all()
-
-# Call create_tables() after the app starts
-if __name__ == '__main__':
-    create_tables()  # Make sure tables are created before running the app
     app.run(debug=True)
