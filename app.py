@@ -38,10 +38,11 @@ class Document(db.Model):
     content = db.Column(db.Text, nullable=False)
     filename = db.Column(db.String(200), nullable=False)
 
-# Create tables (run this once)
+# Create tables (run this once) - Use 'app.before_first_request' correctly.
 @app.before_first_request
 def create_tables():
-    db.create_all()
+    with app.app_context():  # Ensures the database operations are run in the correct context
+        db.create_all()
 
 # Function to process the document (PDF or text)
 def process_document(uploaded_file):
